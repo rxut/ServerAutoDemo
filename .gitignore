@@ -1,0 +1,5 @@
+# Build output and temp files of Build.bat
+/System/
+/Build/Temp/
+/Classes/VersionInfo.uc
+.DS_Store
