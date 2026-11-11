@@ -3,6 +3,7 @@
 ServerAutoDemo records a server demo of every match on a UT99 server.
 Recording starts when the match starts, after warmup and the countdown.
 It stops 2 seconds after the match ends, so each demo ends on the final scoreboard.
+If a map vote or an admin changes the map mid-match, it stops right before the switch.
 Next to each demo it saves the match result: the players, their scores and the team scores.
 
 It runs on the server only. Players don't download anything.
@@ -107,8 +108,8 @@ It holds the match as the scoreboard shows it at the end:
 - the team scores
 - each player's name, team, score, deaths and ping, and whether it's a bot
 
-The server writes it 2 seconds after the match ends, just before recording stops.
-A match that never ends gets a demo but no **.json**. That happens when an admin changes the map mid-match, for example.
+The server writes it when recording stops: 2 seconds after the match ends, or right before a mid-match map change.
+It also says whether the match ended (`"ended": true`) or a map change cut it off (`"ended": false`, with the scores at that moment).
 
 ## Disk space
 

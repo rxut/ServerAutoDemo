@@ -1,6 +1,7 @@
 // Records a server demo of every match: starts when the match starts (after
-// warmup and countdown), stops 2 seconds after the match ends. Next to each
-// demo it writes <demo>.json with the match info (server, map, times, scores).
+// warmup and countdown), stops 2 seconds after the match ends, or as soon as a
+// map change starts mid-match (a map vote). Next to each demo it writes
+// <demo>.json with the match info (server, map, times, scores).
 // Load it as a ServerActor or as a mutator. Settings are in ServerAutoDemo.ini,
 // section [Settings] (ServerAutoDemoSettings).
 class ServerAutoDemo extends Mutator;
@@ -39,7 +40,7 @@ event Tick(float Delta) {
 		return;
 
 	if (!bStarted) {
-		if (Level.Game.bGameEnded || !MatchStarted())
+		if (Level.Game.bGameEnded || Level.NextURL != "" || !MatchStarted())
 			return;
 		bStarted = true;
 		DemoFile = CreateDemoName();
@@ -47,6 +48,16 @@ event Tick(float Delta) {
 		StartTime = Level.TimeSeconds;
 		Result = ConsoleCommand("demorec" @ DemoFile);
 		Log(Result, 'ServerAutoDemo');
+		return;
+	}
+
+	// A map vote or admin map change sets NextURL and switches about half a second
+	// later. Save the scores so far and stop the demo before the level goes away.
+	if (Level.NextURL != "") {
+		bStopped = true;
+		WriteMatchInfo();
+		ConsoleCommand("stopdemo");
+		Log("Demo recording stopped for a map change (match ended:" @ B(Level.Game.bGameEnded) $ ")", 'ServerAutoDemo');
 		return;
 	}
 
@@ -111,6 +122,7 @@ function WriteMatchInfo() {
 	S = S $ ",\"start\":" $ J(StartDate);
 	S = S $ ",\"end\":" $ J(Now());
 	S = S $ ",\"seconds\":" $ int((Level.TimeSeconds - StartTime) / Level.TimeDilation);
+	S = S $ ",\"ended\":" $ B(Level.Game.bGameEnded); // false: a map change cut the match off
 	if (DMP != none)
 		S = S $ ",\"timelimit\":" $ DMP.TimeLimit $ ",\"fraglimit\":" $ DMP.FragLimit;
 	if (TGP != none) {
