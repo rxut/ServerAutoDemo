@@ -107,6 +107,9 @@ It holds the match as the scoreboard shows it at the end:
 - the time limit, frag limit and team score limit
 - the team scores
 - each player's name, team, score, deaths and ping, and whether it's a bot
+- players who left before the end too, with their score when they left and `"left": true`
+
+A player who leaves and comes back is listed once, with the scores from both visits added up.
 
 The server writes it when recording stops: 2 seconds after the match ends, or right before a mid-match map change.
 It also says whether the match ended (`"ended": true`) or a map change cut it off (`"ended": false`, with the scores at that moment).

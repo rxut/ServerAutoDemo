@@ -15,6 +15,17 @@ var string DemoFile;   // as passed to demorec, without .dem
 var string StartDate;
 var float StartTime;
 
+// Everyone who played since the match started, so players who left stay on the
+// scoreboard with their last score. Refreshed once a second.
+struct PlayerEntry {
+	var string Name;
+	var int ID, Team, Score, Deaths, Ping;
+	var byte bBot, bGone;
+};
+var PlayerEntry Entries[64]; // ponytail: players past 64 in one match are not listed
+var int NumEntries;
+var float NextPlayerUpdate;
+
 event PostBeginPlay() {
 	// Outer object named after the ini, inner object named Settings: section [Settings].
 	Settings = new(new(none, 'ServerAutoDemo') class'Object', 'Settings') class'ServerAutoDemoSettings';
@@ -49,6 +60,11 @@ event Tick(float Delta) {
 		Result = ConsoleCommand("demorec" @ DemoFile);
 		Log(Result, 'ServerAutoDemo');
 		return;
+	}
+
+	if (Level.TimeSeconds >= NextPlayerUpdate) {
+		UpdatePlayers();
+		NextPlayerUpdate = Level.TimeSeconds + 1.0;
 	}
 
 	// A map vote or admin map change sets NextURL and switches about half a second
@@ -99,13 +115,82 @@ function string J(string S) {
 	return "\"" $ Result $ "\"";
 }
 
+// Players still on the server get their current values. Those who left keep the
+// values from the last update before they left.
+function UpdatePlayers() {
+	local PlayerReplicationInfo PRI;
+	local int i;
+
+	for (i = 0; i < NumEntries; i++)
+		Entries[i].bGone = 1;
+	foreach AllActors(class'PlayerReplicationInfo', PRI) {
+		if (PRI.bIsSpectator || PRI.PlayerName == "")
+			continue;
+		for (i = 0; i < NumEntries; i++)
+			if (Entries[i].ID == PRI.PlayerID)
+				break;
+		if (i == NumEntries) {
+			if (NumEntries == ArrayCount(Entries))
+				continue;
+			NumEntries++;
+			Entries[i].ID = PRI.PlayerID;
+		}
+		Entries[i].Name = PRI.PlayerName;
+		Entries[i].Team = PRI.Team;
+		Entries[i].Score = int(PRI.Score);
+		Entries[i].Deaths = int(PRI.Deaths);
+		Entries[i].Ping = PRI.Ping;
+		Entries[i].bBot = byte(PRI.bIsABot);
+		Entries[i].bGone = 0;
+	}
+}
+
+// One JSON player per name. A player who left and came back has two entries
+// (the game starts them at 0 again): their scores and deaths add up, team and ping
+// come from the entry still on the server (else the last one). "left" is true
+// when none of them is still on the server.
+function string PlayersJson() {
+	local int i, j, Last, Score, Deaths;
+	local bool bLeft;
+	local string S, Sep;
+
+	for (i = 0; i < NumEntries; i++) {
+		for (j = 0; j < i; j++)
+			if (Entries[j].Name == Entries[i].Name)
+				break;
+		if (j < i)
+			continue; // added with the first entry of this name
+		Score = 0;
+		Deaths = 0;
+		Last = i;
+		bLeft = true;
+		for (j = i; j < NumEntries; j++) {
+			if (Entries[j].Name != Entries[i].Name)
+				continue;
+			Score += Entries[j].Score;
+			Deaths += Entries[j].Deaths;
+			if (Entries[j].bGone == 0) {
+				bLeft = false;
+				Last = j;
+			} else if (bLeft) {
+				Last = j;
+			}
+		}
+		S = S $ Sep $ "{\"name\":" $ J(Entries[i].Name) $ ",\"team\":" $ Entries[Last].Team
+			$ ",\"score\":" $ Score $ ",\"deaths\":" $ Deaths
+			$ ",\"ping\":" $ Entries[Last].Ping $ ",\"bot\":" $ B(Entries[Last].bBot == 1)
+			$ ",\"left\":" $ B(bLeft) $ "}";
+		Sep = ",";
+	}
+	return S;
+}
+
 // Writes <demo>.json next to the demo: the match as the scoreboard shows it at the end.
 function WriteMatchInfo() {
 	local StatLogFile F;
 	local GameReplicationInfo GRI;
 	local TeamGamePlus TGP;
 	local DeathMatchPlus DMP;
-	local PlayerReplicationInfo PRI;
 	local string S, Sep;
 	local int i;
 
@@ -135,17 +220,8 @@ function WriteMatchInfo() {
 		}
 		S = S $ "]";
 	}
-	S = S $ ",\"players\":[";
-	Sep = "";
-	foreach AllActors(class'PlayerReplicationInfo', PRI) {
-		if (PRI.bIsSpectator || PRI.PlayerName == "")
-			continue;
-		S = S $ Sep $ "{\"name\":" $ J(PRI.PlayerName) $ ",\"team\":" $ PRI.Team
-			$ ",\"score\":" $ int(PRI.Score) $ ",\"deaths\":" $ int(PRI.Deaths)
-			$ ",\"ping\":" $ PRI.Ping $ ",\"bot\":" $ B(PRI.bIsABot) $ "}";
-		Sep = ",";
-	}
-	S = S $ "]}";
+	UpdatePlayers();
+	S = S $ ",\"players\":[" $ PlayersJson() $ "]}";
 
 	F = Spawn(class'StatLogFile');
 	F.Encoding = FILE_ENCODING_UTF8;
