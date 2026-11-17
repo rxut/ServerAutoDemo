@@ -306,4 +306,6 @@ function string CommonSuffix(string A, string B) {
 
 defaultproperties {
 	RemoteRole=ROLE_None
+	// Tick while the game is paused too: VoteSys still votes and changes the map then.
+	bAlwaysTick=True
 }
